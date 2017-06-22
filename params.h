@@ -24,14 +24,20 @@ class Params
         vector<double> edge_features(user_id from, user_id to, unsigned data, unsigned mutual)
         {
             // These are the four current features + the intercept term (at index 4):
-            // Edge creation time since TIMEPOINT using 3 functions  
+            // Edge creation time since TIMEPOINT using 3 functions
             // and the number of mutual friends.
             // More features can be added, but the training time will increase.
             vector<double> fvec(wvec.size(), 1.0);
-            fvec[0] = pow(fabs(TIMEPOINT-data), -0.1);
-            fvec[1] = pow(fabs(TIMEPOINT-data), -0.3);
-            fvec[2] = pow(fabs(TIMEPOINT-data), -0.5);
+            fvec[0] = std::min(pow(fabs(TIMEPOINT-data), -0.1), 1.0);
+            fvec[1] = std::min(pow(fabs(TIMEPOINT-data), -0.3), 1.0);
+            fvec[2] = std::min(pow(fabs(TIMEPOINT-data), -0.5), 1.0);
             fvec[3] = mutual;
+            std::cerr << "Features of (" << from << ", " << to << "): "
+                      << " " << fvec[0]
+                      << " " << fvec[1]
+                      << " " << fvec[2]
+                      << " " << fvec[3]
+                      << " " << std::endl;
             return fvec;
         }
 
@@ -69,7 +75,8 @@ class Params
             vector<vector<double> > vals(wvec.size()-1);
             for (unsigned id = 0; id < nvert; id++)
             {
-                for (Graph::iterator e = graph->iterate_outgoing_edges(id); !e.end(); e++)
+                Graph::iterator end = graph->outgoing_end(id);
+                for (Graph::iterator e = graph->iterate_outgoing_edges(id); e != end; e++)
                 {
                     user_id fr = (*e).v2;
                     pair<user_id, user_id> p = make_pair(id, fr);
@@ -112,7 +119,8 @@ class Params
                 for (unsigned w = 0; w < wvec.size(); w++)
                 {
                     double fw_sum = 0.0, dfw_sum = 0.0;
-                    for (Graph::iterator e = graph->iterate_outgoing_edges(j); !e.end(); e++)
+                    Graph::iterator end = graph->outgoing_end(j);
+                    for (Graph::iterator e = graph->iterate_outgoing_edges(j); e != end; e++)
                     {
                         user_id nei = (*e).v2;
                         fw_sum += edge_strength(j, nei);
@@ -123,7 +131,7 @@ class Params
                         if (w == 0)
                             dQ[j][nei] = vector<double>(wvec.size(), 0.0);
                     }
-                    for (Graph::iterator e = graph->iterate_outgoing_edges(j); !e.end(); e++)
+                    for (Graph::iterator e = graph->iterate_outgoing_edges(j); e != end; e++)
                     {
                         user_id nei = (*e).v2;
 
@@ -144,6 +152,6 @@ class Params
         {
             wvec = w;
         }
-}; 
+};
 #endif
 

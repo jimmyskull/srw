@@ -6,8 +6,7 @@
 
 using namespace std;
 
-const unsigned OCT1_2010 = 1285934913;
-const unsigned TIMEPOINT = OCT1_2010;
+const unsigned TIMEPOINT = 10;
 
 inline double dot_product(vector<double>& a, vector<double>& b)
 {
@@ -29,13 +28,13 @@ inline double logistic_deriv(double x)
 
 inline double logistic(double x)
 {
-    if (x > 30) return 1.0;
-    if (x < -30) return 0.0;
+    //if (x > 30) return 1.0;
+    //if (x < -30) return 0.0;
     return 1.0 / (1.0 + exp(-x));
 }
 
 // Taken from http://www.kaggle.com/c/socialNetwork/forums/t/247/auc-calculation-check/1557#post1557
-struct PredictionAnswer 
+struct PredictionAnswer
 {
     double prediction;
     unsigned char answer; //this is either 0 or 1
@@ -55,9 +54,9 @@ double calculateAUC(vector<PredictionAnswer> &p)
     accum=tn=0;
     threshold=p[0].prediction;
 
-    for (i=0;i<count;i++) 
+    for (i=0;i<count;i++)
     {
-        if (p[i].prediction!=threshold) 
+        if (p[i].prediction!=threshold)
         { //threshold changes
             threshold=p[i].prediction;
             accum+=tn*(truePos+tp0); //2* the area of trapezoid
@@ -65,7 +64,7 @@ double calculateAUC(vector<PredictionAnswer> &p)
             tn=0;
         }
         tn+= 1- p[i].answer; //x-distance between adjacent points
-        truePos-= p[i].answer;            
+        truePos-= p[i].answer;
     }
     accum+=tn*(truePos+tp0); //2* the area of trapezoid
     return (double)accum/(2*ones*(count-ones));
@@ -75,7 +74,7 @@ void load_ids(const char *users_ids, vector<user_id>& users)
 {
     FILE *inp = fopen64(users_ids, "r");
     user_id ind = 0;
-    while(fscanf(inp, "%u", &ind) == 1)
+    while(fscanf(inp, "%lu", &ind) == 1)
         users.push_back(ind);
     fclose(inp);
 }

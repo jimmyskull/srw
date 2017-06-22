@@ -39,23 +39,25 @@ class Subgraph
     private:
         Graph* build_lgraph(Graph *graph, unsigned edges)
         {
-            Graph *sub = new Graph(edges, v2u.size(), true); // true does allocation 
+            Graph *sub = new Graph(edges, v2u.size(), true); // true does allocation
             unsigned vc = 0, ec = 0;
             // iterate in increasing order. start has index 0
             for (map_u2v::iterator it = u2v.begin(); it != u2v.end(); it++)
             {
                 vc = it->first;
 
-                sub->adjacency_offset[vc] = ec;
+                //sub->adjacency_offset[vc] = ec;
                 Q[vc] = scores();
                 unsigned prev = ec;
-                for (Graph::iterator e = graph->iterate_outgoing_edges(it->second); !e.end(); e++)
+                Graph::iterator end = graph->outgoing_end(it->second);
+                for (Graph::iterator e = graph->iterate_outgoing_edges(it->second); e != end; e++)
                 {
                     unsigned nei = (*e).v2;
-                    if ((*e).data < Timepoint && v2u.count(nei) > 0)
+                    if ((*e).data <= Timepoint && v2u.count(nei) > 0)
                     {
-                        sub->adjacency_data[ec].v2 = v2u[nei];
-                        sub->adjacency_data[ec].data = (*e).data;
+                        //sub->adjacency_data[ec].v2 = v2u[nei];
+                        //sub->adjacency_data[ec].data = (*e).data;
+                        sub->adj[ec].push_back({v2u[nei], (*e).data});
                         ec++;
                         Q[vc][ v2u[nei] ] = 0.0;
                     }
@@ -63,7 +65,7 @@ class Subgraph
                 if (prev == ec)
                     zerodeg.push_back(vc);
             }
-            sub->adjacency_offset[vc+1] = ec;
+            //sub->adjacency_offset[vc+1] = ec;
             return sub;
         }
 
@@ -75,13 +77,14 @@ class Subgraph
             mutual[vertices] = 0;
             u2v[vertices] = start;
             v2u[start] = vertices++;
-            for (Graph::iterator e = graph->iterate_outgoing_edges(start); !e.end(); e++) 
+            Graph::iterator end = graph->outgoing_end(start);
+            for (Graph::iterator e = graph->iterate_outgoing_edges(start); e != end; e++)
             {
                 user_id fr = (*e).v2;
-                if ((*e).data < Timepoint)
+                if ((*e).data <= Timepoint)
                 {
                     u2v[vertices] = fr;
-                    v2u[fr] = vertices++; 
+                    v2u[fr] = vertices++;
                     friends.insert(fr);
                 }
                 else if ((*e).data > Timepoint)
@@ -96,9 +99,10 @@ class Subgraph
             {
                 user_id fr = *it;
                 unsigned mut = 0;
-                for (Graph::iterator e = graph->iterate_outgoing_edges(fr); !e.end(); e++) 
+                Graph::iterator end = graph->outgoing_end(fr);
+                for (Graph::iterator e = graph->iterate_outgoing_edges(fr); e != end; e++)
                 {
-                    if ((*e).data < Timepoint)
+                    if ((*e).data <= Timepoint)
                     {
                         user_id fr = (*e).v2;
                         edges++;
@@ -119,14 +123,15 @@ class Subgraph
             {
                 user_id fof = *it;
                 unsigned mut = 0;
-                for (Graph::iterator e = graph->iterate_outgoing_edges(fof); !e.end(); e++) 
-                    if ((*e).data < Timepoint && friends.count((*e).v2) > 0)
+                Graph::iterator end = graph->outgoing_end(fof);
+                for (Graph::iterator e = graph->iterate_outgoing_edges(fof); e != end; e++)
+                    if ((*e).data <= Timepoint && friends.count((*e).v2) > 0)
                         mut++;
                 if (mut >= 1)
                 {
                     mutual[vertices] = mut;
                     u2v[vertices] = fof;
-                    v2u[fof] = vertices++; 
+                    v2u[fof] = vertices++;
                     filtered_fofs.insert(fof);
                 }
             }
@@ -134,8 +139,9 @@ class Subgraph
             for (vset::iterator it = filtered_fofs.begin(); it != filtered_fofs.end(); it++)
             {
                 user_id fof = *it;
-                for (Graph::iterator e = graph->iterate_outgoing_edges(fof); !e.end(); e++) 
-                    if ((*e).data < Timepoint && v2u.count((*e).v2) > 0)
+                Graph::iterator end = graph->outgoing_end(fof);
+                for (Graph::iterator e = graph->iterate_outgoing_edges(fof); e != end; e++)
+                    if ((*e).data <= Timepoint && v2u.count((*e).v2) > 0)
                         edges++;
             }
 
@@ -146,9 +152,9 @@ class Subgraph
             set_difference(filtered_fofs.begin(), filtered_fofs.end(),
                            positive.begin(),  positive.end(),
                            inserter(negative, negative.end()));
-            //cout << "Vertex " << start << " neighbourhood. Fr = " << friends.size() << ", filter-fofs = " << filtered_fofs.size() 
-            //   << ", edges = " << edges << ", pos = " << positive.size() << ", neg = " << negative.size() << "m1 = " << v2u.size() << ", m2 = " << u2v.size() << endl;
-            //cout << friends.size() << "\t" << filtered_fofs.size() << "\t" << positive.size() << endl;
+            cout << "Vertex " << start << " neighbourhood. Fr = " << friends.size() << ", filter-fofs = " << filtered_fofs.size()
+               << ", edges = " << edges << ", pos = " << positive.size() << ", neg = " << negative.size() << "m1 = " << v2u.size() << ", m2 = " << u2v.size() << endl;
+            cout << friends.size() << "\t" << filtered_fofs.size() << "\t" << positive.size() << endl;
             return build_lgraph(graph, edges);
         }
 
@@ -169,7 +175,7 @@ class Subgraph
             return count;
         }
 
-        Subgraph(Graph *orig, user_id start, const unsigned T) : 
+        Subgraph(Graph *orig, user_id start, const unsigned T) :
             Timepoint(T), start(start)
         {
             subgraph = create_subgraph(orig);
@@ -191,9 +197,9 @@ class Subgraph
             for (edge_scores::iterator it = Q.begin(); it != Q.end(); it++)
             {
                 double sum = 0.0;
-                for (scores::iterator e = it->second.begin(); e != it->second.end(); e++) 
+                for (scores::iterator e = it->second.begin(); e != it->second.end(); e++)
                     sum += p.edge_strength(it->first, e->first);
-                for (scores::iterator e = it->second.begin(); e != it->second.end(); e++) 
+                for (scores::iterator e = it->second.begin(); e != it->second.end(); e++)
                     Q[it->first][e->first] = p.edge_strength(it->first, e->first) / sum;
             }
         }

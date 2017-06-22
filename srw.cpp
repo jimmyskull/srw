@@ -12,6 +12,86 @@
 #include <sys/time.h>
 #include <omp.h>
 
+#include <set>
+#include <fstream>
+#include <iterator>
+#include <sstream>
+#include <unordered_map>
+#include <igraph/igraph.h>
+
+#include <cstdlib>
+
+typedef unsigned long int user_id;
+
+typedef void * Users_data;
+
+struct endpoint {
+  endpoint(user_id v2, unsigned data) : v2(v2), data(data) {}
+
+  ~endpoint() {}
+
+  user_id v2;
+  unsigned data;
+};
+
+class Graph {
+public:
+  typedef std::unordered_map<user_id, std::vector<endpoint>> nei_t;
+  typedef std::vector<endpoint>::iterator iterator;
+
+  Graph(unsigned edges, unsigned vertex_count, bool allocation) : vertex_count(vertex_count) {
+    if (allocation) {
+      adj.reserve(vertex_count);
+    }
+  }
+
+  Graph() : vertex_count(0) {}
+  ~Graph() {}
+
+  void ReadFile(std::string filename) {
+    std::ifstream infile(filename);
+    std::string temp;
+    std::set<user_id> ids;
+
+    std::cout << "Reading edge list " << filename << std::endl;
+    if (infile.is_open()) {
+      while (std::getline(infile, temp)) {
+        std::istringstream buffer(temp);
+        std::vector<user_id> line((std::istream_iterator<user_id>(buffer)),
+                                  std::istream_iterator<user_id>());
+
+        if (line.size() != 2) {
+          std::cerr << "Expected two numbers, got '" << temp << "'" << std::endl;
+          exit(1);
+        }
+        user_id from = line.at(0);
+        user_id to = line.at(1);
+        adj[from].push_back({to, std::max(rand() % 12 + 1, 1)});
+        adj[to].push_back({from, std::max(rand() % 12 + 1, 1)});
+        // std::cout << from << "->" << to << " (" << adj.at(from).size() << ")" << std::endl;
+        ids.insert(from);
+        ids.insert(to);
+      }
+      infile.close();
+    } else {
+      std::cerr << "Unable to open file!" << std::endl;
+    }
+    vertex_count = ids.size();
+  }
+
+  iterator iterate_outgoing_edges(user_id vertex) {
+    return adj[vertex].begin();
+  }
+
+  iterator outgoing_end(user_id vertex) {
+    return adj[vertex].end();
+  }
+
+  unsigned vertex_count;
+  nei_t adj;
+};
+
+
 #include "commons.h"
 #include "subgraph.h"
 #include "params.h"
@@ -29,9 +109,9 @@ class PowerMethod
         double **deriv, **dlast;
 
     public:
-        static const double alpha = 0.20; // random walk restart parameter
-        static const unsigned maxiter = 1000; 
-        static const double tolerance = 1e-6;
+        static constexpr double alpha = 0.20; // random walk restart parameter
+        static constexpr unsigned maxiter = 1000;
+        static constexpr double tolerance = 1e-12;
         Subgraph *sub;
         Params *params;
 
@@ -81,7 +161,7 @@ class PowerMethod
         Graph *graph = sub->subgraph;
         unsigned iter = 0;
         double err = 1.0;
-        // We are done when maxiteration is reached 
+        // We are done when maxiteration is reached
         // or the error is small enough.
         while (iter++ < maxiter && err > tolerance)
         {
@@ -101,13 +181,14 @@ class PowerMethod
             for (unsigned i = 0; i < sub->zerodeg.size(); i++)
                 zsum += last[ sub->zerodeg[i] ];
             double nolinks = (1.0-alpha) * zsum / nvert;
-    
+
             pagerank[0] += alpha; // add teleport probability to the start vertex
             #pragma omp parallel for
             for (unsigned id = 0; id < nvert; id++)
             {
                 double update = (1.0-alpha) * last[id];
-                for (Graph::iterator e = graph->iterate_outgoing_edges(id); !e.end(); e++)
+                Graph::iterator end = graph->outgoing_end(id);
+                for (Graph::iterator e = graph->iterate_outgoing_edges(id); e != end; e++)
                 {
                     #pragma omp atomic
                     pagerank[(*e).v2] += (update * sub->score(id, (*e).v2));
@@ -115,7 +196,7 @@ class PowerMethod
                 #pragma omp atomic
                 pagerank[id] += nolinks; // pagerank from "dangling nodes"
             }
-    
+
             // sum the pagerank
             double sum = 0.0;
             #pragma omp parallel for reduction(+:sum)
@@ -124,7 +205,7 @@ class PowerMethod
 
             // normalize to valid probabilities, from 0 to 1.
             sum = 1.0 / sum;
-            #pragma omp parallel for 
+            #pragma omp parallel for
             for (unsigned i = 0; i < nvert; i++)
                 pagerank[i] *= sum;
 
@@ -147,7 +228,7 @@ class PowerMethod
         {
             unsigned iter = 0;
             bool stop = false;
-            // We are done when maxiteration is reached 
+            // We are done when maxiteration is reached
             // or the error is small enough.
             while (iter < maxiter && !stop)
             {
@@ -161,14 +242,17 @@ class PowerMethod
                     deriv[i][k] = 0.0;
                 }
 
+                // std::cout << "********"<< nvert << std::endl;
                 #pragma omp parallel for
                 for (unsigned id = 0; id < nvert; id++)
                 {
-                    for (Graph::iterator e = graph->iterate_outgoing_edges(id); !e.end(); e++)
+                    Graph::iterator end = graph->outgoing_end(id);
+                    // std::cout << ">>>>>>>> "<< end - graph->iterate_outgoing_edges(id) << std::endl;
+                    for (Graph::iterator e = graph->iterate_outgoing_edges(id); e != end; e++)
                     {
                         user_id fr = (*e).v2;
                         double calc = sub->score(id, fr) * dlast[id][k]
-                                      + 
+                                      +
                                       pagerank[id] * (1.0-alpha) * params->qderiv(id, fr, k);
                         #pragma omp atomic
                         deriv[fr][k] += calc;
@@ -179,7 +263,7 @@ class PowerMethod
                 for (unsigned d = 0; d < sub->positive.size(); d++)
                 {
                     unsigned pos = sub->positive[d];
-                
+
                     if (fabs(deriv[pos][k] - dlast[pos][k]) > tolerance)
                         stop = false;
                 }
@@ -191,7 +275,7 @@ class PowerMethod
                         stop = false;
                 }
             }
-            cout << "Derivative iterations: " << iter << endl;
+            //cout << "Derivative iterations: " << iter << endl;
         }
     }
     inline double get_pagerank(unsigned u) { return pagerank[u]; }
@@ -201,13 +285,14 @@ class PowerMethod
 class Optimizer
 {
     private:
-        static const double B = 1.0;
+        static constexpr double B = 1.0;
 
         vector<Subgraph*> subgraphs;
         vector<Params*> parameters;
         vector<PowerMethod*> powers;
 
-        inline double hloss(double x) { if (x < 0) return 0; else return logistic(x / B); }
+        inline double hloss(double x) { if (x < 0) return 0; else return logistic(x / B);
+        }
         inline double dhloss(double x) { return logistic_deriv(x / B) / B; }
 
         void candidate_sums(unsigned s, double& sum_p, vector<double>& sum_d)
@@ -276,11 +361,12 @@ class Optimizer
                     for (unsigned w = 0; w < wvec.size(); w++)
                         drv[w] += dhloss(diff) * (
                                     (power->get_derivative(neg, w)*sum_p - p_l*sum_d[w])/(sum_p*sum_p)
-                                    - 
+                                    -
                                     (power->get_derivative(pos, w)*sum_p - p_d*sum_d[w])/(sum_p*sum_p)
                                   );
                 }
             }
+            std::cout <<"LOSS="<<loss<<"  SUM="<<sum<<std::endl;
             sum += loss;
         }
         return norm + sum;
@@ -311,7 +397,7 @@ class Optimizer
             delete powers[i];
     }
 
-    // starts optimization 
+    // starts optimization
     void run()
     {
         double w[PNUM] = {0, 0, 0, 0, 0};
@@ -333,7 +419,7 @@ class Optimizer
     }
 
     //alglib callback
-    static void optimize(const real_1d_array &w, double &func, real_1d_array &grad, void *ptr) 
+    static void optimize(const real_1d_array &w, double &func, real_1d_array &grad, void *ptr)
     {
         Optimizer *opt = (Optimizer*)ptr;
         cout << "Called: [";
@@ -443,18 +529,27 @@ class Predictor
         }
 };
 
+
+Graph *load_graph_data() {
+  Graph *g = new Graph();
+  //g->ReadFile("pa.el");
+  g->ReadFile("banana.el");
+  return g;
+}
+
 int main(int argc, char *argv[])
 {
     srand(time(0));
 
     Graph *graph = load_graph_data();
 
-    vector<user_id> users, training, ;
+    vector<user_id> users, training;
     // The list with selected users IDs.
-    load_ids("selection/ids/users.txt", users);
+    load_ids("banana-ids.txt", users);
+    //load_ids("ids.txt", users);
 
     // Use first 100 for training, rest for testing
-    for (unsigned i = 0; i < 100; i++)
+    for (unsigned i = 0; i < 80; i++)
         training.push_back(users[i]);
     Optimizer opt(graph, 0, training);
     opt.run();
@@ -468,12 +563,11 @@ int main(int argc, char *argv[])
     //double x[Optimizer::PNUM] = {0.983772, 2.6467, 1.35106, 1.21225, -3.74018};
     //vector<double> wvec(x, x+Optimizer::PNUM);
 
-    //vector<user_id> testing(users.begin()+100, users.end());
-    //Predictor pred(wvec);
-    //pred.run(graph, 0, testing, "predictions.txt");
+    // vector<user_id> testing(users.begin() + 100, users.end());
+    // Predictor pred(opt.wvec);
+    // pred.run(graph, 0, testing, "predictions.txt");
 
     delete graph;
-
     return 0;
 }
 
